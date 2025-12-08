@@ -1,0 +1,52 @@
+/* Page layout */
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background:
+        radial-gradient(circle at 20% 0%, rgba(255,255,255,0.02), transparent 60%),
+        radial-gradient(circle at 80% 0%, rgba(255,255,255,0.02), transparent 60%),
+        linear-gradient(#0a0b10, #151824 60%, #080910 100%);
+    color: #eee;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.room {
+    width: min(90vw, 900px);
+    padding-top: 40px;
+    display: flex;
+    justify-content: center;
+}
+
+/* Fireplace frame */
+.fireplace {
+    position: relative;
+    margin-top: 5vh;
+    width: 100%;
+    padding: 8px;
+    border-radius: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.75);
+    background: rgba(0,0,0,0.35);
+}
+
+/* Firebox opening */
+.firebox {
+    position: relative;
+    padding: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+}
+
+/* Canvas styling */
+#fire-canvas {
+    width: 100%;
+    height: auto;
+    max-width: 900px;
+    border-radius: 14px;
+    display: block;
+    box-shadow: 0 0 80px rgba(255, 140, 60, 0.15);
+}
