@@ -1,27 +1,46 @@
+import {
+    AmbientLight,
+    BoxGeometry,
+    Clock,
+    Color,
+    CylinderGeometry,
+    Group,
+    Mesh,
+    MeshStandardMaterial,
+    PerspectiveCamera,
+    PlaneGeometry,
+    PointLight,
+    Scene,
+    ShaderMaterial,
+    Vector2,
+    Vector3,
+    WebGLRenderer
+} from "three";
+
 document.addEventListener("DOMContentLoaded", () => {
     const canvas = document.getElementById("fire-canvas");
-    if (!window.THREE || !canvas) {
-        console.error("three.js or canvas missing.");
+    if (!canvas) {
+        console.error("Canvas missing.");
         return;
     }
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(new THREE.Color(0x0b0d13), 1);
+    renderer.setClearColor(new Color(0x0b0d13), 1);
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    const scene = new Scene();
+    const camera = new PerspectiveCamera(45, 1, 0.1, 100);
     camera.position.set(0, 1.6, 6);
     camera.lookAt(0, 1, 0);
 
-    scene.add(new THREE.AmbientLight(0x705040, 0.65));
-    const fireLight = new THREE.PointLight(0xffaa66, 1.6, 12, 2);
+    scene.add(new AmbientLight(0x705040, 0.65));
+    const fireLight = new PointLight(0xffaa66, 1.6, 12, 2);
     fireLight.position.set(0, 1.1, 1.2);
     scene.add(fireLight);
 
-    const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(14, 10),
-        new THREE.MeshStandardMaterial({ color: 0x0f1016, roughness: 1, metalness: 0 })
+    const floor = new Mesh(
+        new PlaneGeometry(14, 10),
+        new MeshStandardMaterial({ color: 0x0f1016, roughness: 1, metalness: 0 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -1.5;
@@ -39,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
     firePlane.position.set(0, 0.35, -0.55);
     scene.add(firePlane);
 
-    const clock = new THREE.Clock();
+    const clock = new Clock();
 
     function resize() {
         const width = canvas.clientWidth;
@@ -67,24 +86,24 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function buildFireplace() {
-    const group = new THREE.Group();
+    const group = new Group();
 
-    const brick = new THREE.MeshStandardMaterial({
+    const brick = new MeshStandardMaterial({
         color: 0x7a4233,
         roughness: 0.9,
         metalness: 0.05
     });
-    const stone = new THREE.MeshStandardMaterial({
+    const stone = new MeshStandardMaterial({
         color: 0x1b1c23,
         roughness: 0.8,
         metalness: 0.02
     });
 
-    const hearth = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.5, 2.2), brick);
+    const hearth = new Mesh(new BoxGeometry(6.6, 0.5, 2.2), brick);
     hearth.position.set(0, -1.25, 0);
     group.add(hearth);
 
-    const left = new THREE.Mesh(new THREE.BoxGeometry(0.7, 3.2, 2.2), brick);
+    const left = new Mesh(new BoxGeometry(0.7, 3.2, 2.2), brick);
     left.position.set(-3.05, 0.2, 0);
     group.add(left);
 
@@ -92,15 +111,15 @@ function buildFireplace() {
     right.position.x = 3.05;
     group.add(right);
 
-    const top = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.6, 2.4), brick);
+    const top = new Mesh(new BoxGeometry(6.6, 0.6, 2.4), brick);
     top.position.set(0, 2.1, 0);
     group.add(top);
 
-    const back = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.2, 0.35), stone);
+    const back = new Mesh(new BoxGeometry(5.2, 3.2, 0.35), stone);
     back.position.set(0, 0.4, -1.1);
     group.add(back);
 
-    const innerShelf = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.35, 2.0), stone);
+    const innerShelf = new Mesh(new BoxGeometry(5.4, 0.35, 2.0), stone);
     innerShelf.position.set(0, -0.8, 0.1);
     group.add(innerShelf);
 
@@ -108,17 +127,17 @@ function buildFireplace() {
 }
 
 function buildLogs(layout = "teepee") {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({
+    const group = new Group();
+    const mat = new MeshStandardMaterial({
         color: 0x4a2a17,
         roughness: 0.8,
         metalness: 0.02
     });
 
-    const geo = new THREE.CylinderGeometry(0.22, 0.25, 3, 16, 1, false);
+    const geo = new CylinderGeometry(0.22, 0.25, 3, 16, 1, false);
 
     function addLog(position, rotation) {
-        const log = new THREE.Mesh(geo, mat);
+        const log = new Mesh(geo, mat);
         log.position.copy(position);
         log.rotation.set(rotation.x, rotation.y, rotation.z);
         group.add(log);
@@ -130,42 +149,42 @@ function buildLogs(layout = "teepee") {
 
         // Bottom layer
         addLog(
-            new THREE.Vector3(0, -0.35, offset),
-            new THREE.Vector3(0, 0, Math.PI / 2)
+            new Vector3(0, -0.35, offset),
+            new Vector3(0, 0, Math.PI / 2)
         );
         addLog(
-            new THREE.Vector3(0, -0.35, -offset),
-            new THREE.Vector3(0, 0, Math.PI / 2)
+            new Vector3(0, -0.35, -offset),
+            new Vector3(0, 0, Math.PI / 2)
         );
 
         // Top layer
         addLog(
-            new THREE.Vector3(offset, layerGap - 0.35, 0),
-            new THREE.Vector3(Math.PI / 2, 0, 0)
+            new Vector3(offset, layerGap - 0.35, 0),
+            new Vector3(Math.PI / 2, 0, 0)
         );
         addLog(
-            new THREE.Vector3(-offset, layerGap - 0.35, 0),
-            new THREE.Vector3(Math.PI / 2, 0, 0)
+            new Vector3(-offset, layerGap - 0.35, 0),
+            new Vector3(Math.PI / 2, 0, 0)
         );
     } else {
         const tilt = Math.PI / 5;
         const spread = 0.65;
 
         addLog(
-            new THREE.Vector3(-spread, -0.2, 0),
-            new THREE.Vector3(Math.PI / 22, 0, -tilt)
+            new Vector3(-spread, -0.2, 0),
+            new Vector3(Math.PI / 22, 0, -tilt)
         );
         addLog(
-            new THREE.Vector3(spread, -0.25, 0),
-            new THREE.Vector3(-Math.PI / 18, 0, tilt)
+            new Vector3(spread, -0.25, 0),
+            new Vector3(-Math.PI / 18, 0, tilt)
         );
         addLog(
-            new THREE.Vector3(0, -0.18, -spread * 0.8),
-            new THREE.Vector3(tilt, 0, 0)
+            new Vector3(0, -0.18, -spread * 0.8),
+            new Vector3(tilt, 0, 0)
         );
         addLog(
-            new THREE.Vector3(0, -0.22, spread * 0.85),
-            new THREE.Vector3(-tilt * 0.9, 0, 0)
+            new Vector3(0, -0.22, spread * 0.85),
+            new Vector3(-tilt * 0.9, 0, 0)
         );
     }
 
@@ -173,13 +192,13 @@ function buildLogs(layout = "teepee") {
 }
 
 function buildFirePlane() {
-    const geometry = new THREE.PlaneGeometry(3.1, 2.8, 1, 1);
-    const material = new THREE.ShaderMaterial({
+    const geometry = new PlaneGeometry(3.1, 2.8, 1, 1);
+    const material = new ShaderMaterial({
         transparent: true,
         depthWrite: false,
         uniforms: {
             u_time: { value: 0 },
-            u_resolution: { value: new THREE.Vector2(640, 480) }
+            u_resolution: { value: new Vector2(640, 480) }
         },
         vertexShader: `
             varying vec2 v_uv;
@@ -281,5 +300,5 @@ function buildFirePlane() {
         `
     });
 
-    return new THREE.Mesh(geometry, material);
+    return new Mesh(geometry, material);
 }
