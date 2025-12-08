@@ -61,6 +61,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const fireplace = buildFireplace();
     scene.add(fireplace);
 
+    const stockings = buildMantelStockings(fireplace);
+    fireplace.add(stockings);
+
     const tree = buildTree();
     tree.scale.setScalar(1.5);
     tree.position.set(4.2, -1.2, 2.2);
@@ -121,6 +124,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         fireLight.intensity = 1.35 + Math.sin(t * 6.0) * 0.15 + Math.sin(t * 11.0) * 0.1;
         tree.rotation.y = 0.03 * Math.sin(t * 0.3);
+        if (stockings.userData.stockings) {
+            stockings.userData.stockings.forEach((s, i) => {
+                s.rotation.z = 0.03 * Math.sin(t * 0.8 + i * 0.7);
+            });
+        }
         treeLights.userData.bulbs.forEach((bulb) => {
             const phase = bulb.userData.twinklePhase || 0;
             const base = bulb.userData.baseIntensity || 2.2;
@@ -186,6 +194,7 @@ function buildFireplace() {
     const top = new Mesh(new BoxGeometry(6.9, 0.65, 2.6), brick);
     top.position.set(0, 2.15, 0);
     group.add(top);
+    group.userData.mantelTop = top;
 
     const chimneyCap = new Mesh(new BoxGeometry(4.2, 0.35, 2.8), brick);
     chimneyCap.position.set(0, 2.55, 0.25);
@@ -380,6 +389,51 @@ function buildTreeLights(tree) {
     });
 
     group.userData.bulbs = bulbs;
+    return group;
+}
+
+function buildMantelStockings(fireplace) {
+    const group = new Group();
+    const top = fireplace.userData.mantelTop;
+    if (!top) return group;
+
+    const bodyGeo = new BoxGeometry(0.35, 0.9, 0.18);
+    const footGeo = new BoxGeometry(0.35, 0.2, 0.18);
+    const colors = [0xc0392b, 0x27ae60, 0x2980b9, 0xd35400];
+    const positions = [-2.4, -0.8, 0.8, 2.4];
+    const tilts = [-0.08, 0.05, -0.05, 0.08];
+    const stockings = [];
+
+    const params = top.geometry.parameters || {};
+    const mantleHalfDepth = (params.depth || 2.6) / 2;
+    const mantleHalfHeight = (params.height || 0.65) / 2;
+    const anchorY = top.position.y - mantleHalfHeight + 0.15;
+    const anchorZ = top.position.z + mantleHalfDepth + 0.08;
+
+    positions.forEach((x, idx) => {
+        const color = colors[idx % colors.length];
+        const mat = new MeshStandardMaterial({
+            color,
+            roughness: 0.85,
+            metalness: 0.03
+        });
+
+        const stocking = new Group();
+        const body = new Mesh(bodyGeo, mat);
+        body.position.set(0, -bodyGeo.parameters.height / 2, 0);
+        stocking.add(body);
+
+        const foot = new Mesh(footGeo, mat);
+        foot.position.set(footGeo.parameters.width / 2, -bodyGeo.parameters.height + footGeo.parameters.height / 2, 0.02);
+        stocking.add(foot);
+
+        stocking.position.set(x, anchorY, anchorZ);
+        stocking.rotation.z = tilts[idx % tilts.length];
+        group.add(stocking);
+        stockings.push(stocking);
+    });
+
+    group.userData.stockings = stockings;
     return group;
 }
 

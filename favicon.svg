@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tree icon">
+  <defs>
+    <linearGradient id="foliage" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4f8c69"/>
+      <stop offset="100%" stop-color="#2f5a3c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" ry="12" fill="#101218"/>
+  <g transform="translate(32 36)">
+    <rect x="-4" y="10" width="8" height="12" rx="2" fill="#6b422c"/>
+    <path d="M0-26 L-16 2 H16 Z" fill="url(#foliage)"/>
+    <path d="M0-18 L-14 6 H14 Z" fill="url(#foliage)"/>
+    <path d="M0-10 L-12 10 H12 Z" fill="url(#foliage)"/>
+  </g>
+</svg>
