@@ -8,13 +8,16 @@ import {
     Matrix3,
     DoubleSide,
     Group,
+    ACESFilmicToneMapping,
     Mesh,
     MeshStandardMaterial,
     PerspectiveCamera,
     PlaneGeometry,
     PointLight,
     Scene,
+    SphereGeometry,
     ShaderMaterial,
+    SRGBColorSpace,
     Vector2,
     Vector3,
     WebGLRenderer
@@ -30,20 +33,26 @@ document.addEventListener("DOMContentLoaded", () => {
     const renderer = new WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(new Color(0x0b0d13), 1);
+    renderer.outputColorSpace = SRGBColorSpace;
+    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
 
     const scene = new Scene();
     const camera = new PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.set(0, 2.2, 9);
     camera.lookAt(0, 1, 0);
 
-    scene.add(new AmbientLight(0x705040, 0.65));
+    scene.add(new AmbientLight(0xffffff, 0.55));
+    const fillLight = new PointLight(0xf4ead9, 2.5, 40, 2);
+    fillLight.position.set(0, 4.8, 12.5);
+    scene.add(fillLight);
     const fireLight = new PointLight(0xffaa66, 1.6, 12, 2);
     fireLight.position.set(0, 1.1, 1.2);
     scene.add(fireLight);
 
     const floor = new Mesh(
         new PlaneGeometry(14, 10),
-        new MeshStandardMaterial({ color: 0x0f1016, roughness: 1, metalness: 0 })
+        new MeshStandardMaterial({ color: 0x14171e, roughness: 1, metalness: 0 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -1.5;
@@ -57,6 +66,8 @@ document.addEventListener("DOMContentLoaded", () => {
     tree.position.set(4.2, -1.2, 2.2);
     scene.add(tree);
     tree.updateMatrixWorld(true);
+    const treeLights = buildTreeLights(tree);
+    scene.add(treeLights);
 
     const logLayout = "teepee"; // teepee | cabin
     const { group: logs, logMeshes } = buildLogs(logLayout);
@@ -110,6 +121,23 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         fireLight.intensity = 1.35 + Math.sin(t * 6.0) * 0.15 + Math.sin(t * 11.0) * 0.1;
         tree.rotation.y = 0.03 * Math.sin(t * 0.3);
+        treeLights.userData.bulbs.forEach((bulb) => {
+            const phase = bulb.userData.twinklePhase || 0;
+            const base = bulb.userData.baseIntensity || 2.2;
+            const speed = bulb.userData.twinkleSpeed || 2.4;
+            const amp = bulb.userData.twinkleAmp || 0.9;
+            const slowPulse = Math.sin(t * 0.35 + phase * 0.25) * (amp * 0.9);
+            const deepFade = Math.sin(t * 0.12 + phase * 0.4) * (amp * 0.6);
+            const blend = 0.5 + 0.5 * Math.sin(t * (speed * 1.2) + phase * 0.8);
+            bulb.material.emissiveIntensity = Math.max(0.25, base + slowPulse + deepFade);
+            if (bulb.userData.colorA && bulb.userData.colorB) {
+                const c = bulb.userData.colorA.clone().lerp(bulb.userData.colorB, blend);
+                bulb.material.emissive.copy(c);
+            }
+        });
+        treeLights.position.copy(tree.position);
+        treeLights.rotation.copy(tree.rotation);
+        treeLights.scale.copy(tree.scale);
         renderer.render(scene, camera);
     }
 
@@ -261,7 +289,7 @@ function buildTree() {
         metalness: 0.05
     });
     const foliageMat = new MeshStandardMaterial({
-        color: 0x304a3a,
+        color: 0x3f6e56,
         roughness: 0.9,
         metalness: 0.04
     });
@@ -284,6 +312,74 @@ function buildTree() {
         group.add(cone);
     });
 
+    return group;
+}
+
+function buildTreeLights(tree) {
+    const group = new Group();
+    const bulbGeo = new SphereGeometry(0.05, 8, 8);
+    const emissiveColors = [0xffa94a, 0xff3b30, 0x4d8cff, 0xffe066];
+    const bulbs = [];
+    let seed = 1337;
+    const rand = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+    };
+
+    tree.updateMatrixWorld(true);
+
+    tree.traverse((child) => {
+        if (!(child instanceof Mesh)) return;
+        if (!(child.geometry instanceof ConeGeometry)) return;
+        const params = child.geometry.parameters || {};
+        const height = params.height || 1;
+        const radius = params.radius || 0.6;
+        const count = Math.max(4, Math.round(radius * 8));
+
+        for (let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2 + rand() * 0.35;
+            const v = 0.2 + rand() * 0.7; // move toward tip
+            const yLocal = -height / 2 + v * height;
+            const ringRadius = Math.max(0.04, radius * (1 - v));
+
+            const pos = new Vector3(
+                Math.cos(angle) * ringRadius,
+                yLocal,
+                Math.sin(angle) * ringRadius
+            );
+
+            pos.applyMatrix4(child.matrixWorld);
+            tree.worldToLocal(pos);
+
+            const colorA = new Color(emissiveColors[Math.floor(rand() * emissiveColors.length)]);
+            let colorB = colorA;
+            while (colorB.equals(colorA)) {
+                colorB = new Color(emissiveColors[Math.floor(rand() * emissiveColors.length)]);
+            }
+            const intensity = 2.2 + rand() * 0.6;
+
+            const mat = new MeshStandardMaterial({
+                color: 0x111111,
+                emissive: colorA.clone(),
+                emissiveIntensity: intensity,
+                metalness: 0.02,
+                roughness: 0.35
+            });
+            const bulb = new Mesh(bulbGeo, mat);
+            bulb.position.copy(pos);
+            bulb.userData.twinklePhase = rand() * Math.PI * 2;
+            bulb.userData.baseIntensity = intensity;
+            bulb.userData.twinkleSpeed = 1.7 + rand() * 1.6;
+            bulb.userData.twinkleAmp = 0.8 + rand() * 0.5;
+            bulb.userData.colorA = colorA;
+            bulb.userData.colorB = colorB;
+
+            group.add(bulb);
+            bulbs.push(bulb);
+        }
+    });
+
+    group.userData.bulbs = bulbs;
     return group;
 }
 
