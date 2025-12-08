@@ -3,6 +3,7 @@ import {
     BoxGeometry,
     Clock,
     Color,
+    ConeGeometry,
     CylinderGeometry,
     Matrix3,
     DoubleSide,
@@ -50,6 +51,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const fireplace = buildFireplace();
     scene.add(fireplace);
+
+    const tree = buildTree();
+    tree.scale.setScalar(1.5);
+    tree.position.set(4.2, -1.2, 2.2);
+    scene.add(tree);
+    tree.updateMatrixWorld(true);
 
     const logLayout = "teepee"; // teepee | cabin
     const { group: logs, logMeshes } = buildLogs(logLayout);
@@ -102,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
             fp.lookAt(target);
         });
         fireLight.intensity = 1.35 + Math.sin(t * 6.0) * 0.15 + Math.sin(t * 11.0) * 0.1;
+        tree.rotation.y = 0.03 * Math.sin(t * 0.3);
         renderer.render(scene, camera);
     }
 
@@ -243,6 +251,42 @@ function buildLogs(layout = "teepee") {
     return { group, logMeshes };
 }
 
+// Build a simple low-poly evergreen tree.
+function buildTree() {
+    const group = new Group();
+
+    const trunkMat = new MeshStandardMaterial({
+        color: 0x5a3b26,
+        roughness: 0.85,
+        metalness: 0.05
+    });
+    const foliageMat = new MeshStandardMaterial({
+        color: 0x304a3a,
+        roughness: 0.9,
+        metalness: 0.04
+    });
+
+    const trunkHeight = 0.65;
+    const trunk = new Mesh(new CylinderGeometry(0.18, 0.2, trunkHeight, 12), trunkMat);
+    trunk.position.y = trunkHeight / 2;
+    group.add(trunk);
+
+    const layers = [
+        { radius: 1.05, height: 1.2, y: 1.1 },
+        { radius: 0.85, height: 1.0, y: 1.9 },
+        { radius: 0.65, height: 0.8, y: 2.6 },
+        { radius: 0.45, height: 0.6, y: 3.15 }
+    ];
+
+    layers.forEach((layer) => {
+        const cone = new Mesh(new ConeGeometry(layer.radius, layer.height, 12), foliageMat);
+        cone.position.y = layer.y;
+        group.add(cone);
+    });
+
+    return group;
+}
+
 function buildLogFlames(logMeshes) {
     const flames = [];
     const tip = new Vector3();
@@ -377,7 +421,7 @@ function createCrackleAudio() {
             // Low, slowly changing noise
             const t = i / data.length;
             const slowWobble = Math.sin(t * Math.PI * 2) * 0.03;
-            data[i] = (Math.random() * 2 - 1) * 0.08 + slowWobble;
+            data[i] = (Math.random() * 2 - 1) * 0.12 + slowWobble;
         }
 
         const source = ctx.createBufferSource();
@@ -386,21 +430,21 @@ function createCrackleAudio() {
 
         const filter = ctx.createBiquadFilter();
         filter.type = "lowpass";
-        filter.frequency.value = 350;
+        filter.frequency.value = 450;
 
         const band = ctx.createBiquadFilter();
         band.type = "bandpass";
-        band.frequency.value = 320;
-        band.Q.value = 0.8;
+        band.frequency.value = 420;
+        band.Q.value = 1.2;
 
         const gain = ctx.createGain();
-        gain.gain.value = 0.25;
+        gain.gain.value = 0.5;
 
         // Gentle amplitude wobble to keep it alive.
         const lfo = ctx.createOscillator();
         lfo.frequency.value = 0.28;
         const lfoGain = ctx.createGain();
-        lfoGain.gain.value = 0.1;
+        lfoGain.gain.value = 0.15;
         lfo.connect(lfoGain).connect(gain.gain);
         lfo.start();
 
