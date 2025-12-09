@@ -41,17 +41,23 @@ document.addEventListener("DOMContentLoaded", () => {
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
 
+    const fireplaceZOffset = -2;
     const scene = new Scene();
+    const cameraTarget = new Vector3(0, 1, fireplaceZOffset);
+    const cameraBasePos = new Vector3(0, 2.2, 9);
+    const baseToTarget = new Vector3().subVectors(cameraBasePos, cameraTarget);
+    const cameraBaseAngle = Math.atan2(baseToTarget.x, baseToTarget.z);
+    const cameraOrbitRadius = Math.sqrt(baseToTarget.x * baseToTarget.x + baseToTarget.z * baseToTarget.z);
     const camera = new PerspectiveCamera(50, 1, 0.1, 100);
-    camera.position.set(0, 2.2, 9);
-    camera.lookAt(0, 1, 0);
+    camera.position.copy(cameraBasePos);
+    camera.lookAt(cameraTarget);
 
     scene.add(new AmbientLight(0xffffff, 0.55));
     const fillLight = new PointLight(0xf4ead9, 2.5, 40, 2);
     fillLight.position.set(0, 4.8, 12.5);
     scene.add(fillLight);
     const fireLight = new PointLight(0xffaa66, 1.6, 12, 2);
-    fireLight.position.set(0, 1.1, 1.2);
+    fireLight.position.set(0, 1.1, 1.2 + fireplaceZOffset);
     scene.add(fireLight);
 
     const floor = new Mesh(
@@ -63,6 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
     scene.add(floor);
 
     const fireplace = buildFireplace();
+    fireplace.position.z = fireplaceZOffset;
     scene.add(fireplace);
 
     const stockings = buildMantelStockings(fireplace);
@@ -78,15 +85,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const logLayout = "teepee"; // teepee | cabin
     const { group: logs, logMeshes } = buildLogs(logLayout);
-    logs.position.set(0, 0.15, 0.2);
+    logs.position.set(0, 0.15, 0.2 + fireplaceZOffset);
     scene.add(logs);
     logs.updateMatrixWorld(true);
 
     const firePlanes = [];
     let snow = null;
+    const pointer = new Vector2(0, 0);
+    const gyroInput = new Vector2(0, 0);
+    let gyroEnabled = false;
+    let gyroRequested = false;
+    const cameraDesired = new Vector3().copy(camera.position);
 
     const firePlane = buildFirePlane();
-    firePlane.position.set(0, 0.18, -0.35);
+    firePlane.position.set(0, 0.18, -0.35 + fireplaceZOffset);
     firePlanes.push(firePlane);
     scene.add(firePlane);
 
@@ -96,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
         scene.add(flame);
     });
 
-    const sideFlames = buildLogSideFlames(logMeshes);
+    const sideFlames = buildLogSideFlames(logMeshes, new Vector3(0, 0.9, fireplaceZOffset));
     sideFlames.forEach((flame) => {
         firePlanes.push(flame);
         scene.add(flame);
@@ -109,6 +121,44 @@ document.addEventListener("DOMContentLoaded", () => {
     const crackle = createCrackleAudio();
     let audioStarted = false;
     let lastTime = 0;
+
+    function updatePointerFromEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+        pointer.set(x, y);
+    }
+
+    function handleDeviceOrientation(e) {
+        if (e.gamma === null || e.beta === null) return;
+        const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+        const maxGamma = 40; // left/right tilt
+        const maxBeta = 30; // forward/back tilt
+        const normalizedX = clamp((e.gamma || 0) / maxGamma, -1, 1);
+        // Bias beta so level phone keeps camera near base height.
+        const normalizedY = clamp(((e.beta || 0) - 50) / maxBeta, -1, 1);
+        gyroInput.set(normalizedX, normalizedY);
+        gyroEnabled = true;
+    }
+
+    function requestGyroAccess() {
+        if (gyroRequested) return;
+        gyroRequested = true;
+        if (typeof DeviceOrientationEvent === "undefined") return;
+        const permission = DeviceOrientationEvent.requestPermission;
+        if (typeof permission === "function") {
+            permission().then((res) => {
+                if (res === "granted") {
+                    window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+                }
+            }).catch(() => {});
+        } else {
+            window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+        }
+    }
+
+    window.addEventListener("pointermove", updatePointerFromEvent);
+    window.addEventListener("pointerdown", updatePointerFromEvent);
 
     function resize() {
         const width = canvas.clientWidth;
@@ -128,6 +178,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const t = clock.getElapsedTime();
         const delta = t - lastTime;
         lastTime = t;
+
+        // Subtle camera orbit based on pointer/touch position.
+        const control = gyroEnabled ? gyroInput : pointer;
+        const angleOffset = control.x * 0.22;
+        const heightOffset = control.y * 0.5;
+        const angle = cameraBaseAngle + angleOffset;
+        cameraDesired.set(
+            Math.sin(angle) * cameraOrbitRadius + cameraTarget.x,
+            cameraBasePos.y + heightOffset,
+            Math.cos(angle) * cameraOrbitRadius + cameraTarget.z
+        );
+        camera.position.lerp(cameraDesired, 0.06);
+        camera.lookAt(cameraTarget);
+
         firePlanes.forEach((fp) => {
             fp.material.uniforms.u_time.value = t;
             const target = fp.userData.lookAtTarget || camera.position;
@@ -202,6 +266,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener(
         "pointerdown",
         () => {
+            requestGyroAccess();
             if (!audioStarted) {
                 crackle.start();
                 audioStarted = true;
@@ -552,12 +617,11 @@ function buildLogFlames(logMeshes) {
     return flames;
 }
 
-function buildLogSideFlames(logMeshes) {
+function buildLogSideFlames(logMeshes, centerTarget = new Vector3(0, 0.9, 0)) {
     const flames = [];
     const offset = new Vector3();
     const normalDir = new Vector3();
     const angles = [Math.PI * 0.5, -Math.PI * 0.5];
-    const centerTarget = new Vector3(0, 0.9, 0);
     const basis = new Matrix3();
 
     logMeshes.forEach((log) => {
