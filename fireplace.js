@@ -60,8 +60,11 @@ document.addEventListener("DOMContentLoaded", () => {
     fireLight.position.set(0, 1.1, 1.2 + fireplaceZOffset);
     scene.add(fireLight);
 
+    const room = buildRoom();
+    scene.add(room);
+
     const floor = new Mesh(
-        new PlaneGeometry(14, 10),
+        new PlaneGeometry(18, 16),
         new MeshStandardMaterial({ color: 0x14171e, roughness: 1, metalness: 0 })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -207,9 +210,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (snow) {
             const positions = snow.geometry.getAttribute("position");
             const speeds = snow.userData.speeds;
-            const spreadX = snow.userData.spreadX;
             const spreadY = snow.userData.spreadY;
-            const spreadZ = snow.userData.spreadZ;
+            const windowCenters = snow.userData.windowCenters;
+            const windowHalfWidth = snow.userData.windowHalfWidth;
+            const windowDepth = snow.userData.windowDepth;
+            const baseZ = snow.userData.baseZ;
 
             for (let i = 0; i < speeds.length; i++) {
                 const i3 = i * 3;
@@ -228,8 +233,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 const floorY = -1.6;
                 if (y < floorY) {
                     y = Math.random() * spreadY + 2.0;
-                    x = (Math.random() - 0.5) * spreadX;
-                    z = (Math.random() - 0.2) * spreadZ - 2;
+                    const center = windowCenters[Math.floor(Math.random() * windowCenters.length)];
+                    x = center + (Math.random() - 0.5) * windowHalfWidth * 2;
+                    z = baseZ - Math.random() * windowDepth;
                 }
 
                 positions.array[i3 + 0] = x;
@@ -510,16 +516,19 @@ function buildSnowSystem() {
     const positions = new Float32BufferAttribute(SNOW_COUNT * 3, 3);
     const speeds = new Float32Array(SNOW_COUNT);
 
-    // Snow volume: a loose box in front of the camera / fireplace
-    const spreadX = 10;
+    // Snow volume: clustered outside each window
+    const windowCenters = [-6.0, 6.0];
+    const windowHalfWidth = 2.3;
     const spreadY = 7;
-    const spreadZ = 8;
+    const windowDepth = 1.4;
+    const baseZ = -4.6;
 
     for (let i = 0; i < SNOW_COUNT; i++) {
         const i3 = i * 3;
-        positions.array[i3 + 0] = (Math.random() - 0.5) * spreadX; // x
+        const center = windowCenters[i % windowCenters.length];
+        positions.array[i3 + 0] = center + (Math.random() - 0.5) * windowHalfWidth * 2; // x near window
         positions.array[i3 + 1] = Math.random() * spreadY + 1.5; // y above floor
-        positions.array[i3 + 2] = (Math.random() - 0.2) * spreadZ - 2; // z in front of fireplace
+        positions.array[i3 + 2] = baseZ - Math.random() * windowDepth; // just outside behind the back wall
 
         // Slight speed variation per flake
         speeds[i] = 0.3 + Math.random() * 0.4;
@@ -532,14 +541,18 @@ function buildSnowSystem() {
         sizeAttenuation: true,
         transparent: true,
         opacity: 0.9,
-        depthWrite: false
+        depthWrite: false,
+        depthTest: true
     });
 
     const snow = new Points(geometry, material);
     snow.userData.speeds = speeds;
-    snow.userData.spreadX = spreadX;
     snow.userData.spreadY = spreadY;
-    snow.userData.spreadZ = spreadZ;
+    snow.userData.windowCenters = windowCenters;
+    snow.userData.windowHalfWidth = windowHalfWidth;
+    snow.userData.windowDepth = windowDepth;
+    snow.userData.baseZ = baseZ;
+    snow.frustumCulled = false; // keep visible when camera skews past one window
 
     return snow;
 }
@@ -587,6 +600,219 @@ function buildMantelStockings(fireplace) {
 
     group.userData.stockings = stockings;
     return group;
+}
+
+function buildRoom() {
+    const group = new Group();
+
+    // Basic materials
+    const wallMat = new MeshStandardMaterial({
+        color: 0x222630,
+        roughness: 0.92,
+        metalness: 0.02
+    });
+
+    const ceilingMat = new MeshStandardMaterial({
+        color: 0x303545,
+        roughness: 0.9,
+        metalness: 0.03
+    });
+
+    // Room dimensions (roughly matching your existing floor / fireplace scale)
+    const roomWidth = 18;
+    const roomDepth = 16;
+    const roomHeight = 8;
+    const backWallZ = -3.8;
+    const wallThickness = 0.4;
+
+    // Window specs (kept in sync with buildBackWallWindows)
+    const windowWidth = 2.4;
+    const windowHeight = 3.1;
+    const windowOffsetX = 6.0;
+    const sillHeight = 0.9;
+
+    // Build back wall from segments to leave openings for the windows.
+    const wallBottom = -2;
+    const wallTop = wallBottom + roomHeight;
+    const addWallSegment = (w, h, x, y) => {
+        const segment = new Mesh(new BoxGeometry(w, h, wallThickness), wallMat);
+        segment.position.set(x, y, backWallZ);
+        group.add(segment);
+    };
+
+    // Horizontal bands above and below the window cutouts
+    const bottomHeight = sillHeight - wallBottom;
+    const bottomCenterY = wallBottom + bottomHeight / 2;
+    addWallSegment(roomWidth, bottomHeight, 0, bottomCenterY);
+
+    const windowTop = sillHeight + windowHeight;
+    const topHeight = wallTop - windowTop;
+    const topCenterY = windowTop + topHeight / 2;
+    addWallSegment(roomWidth, topHeight, 0, topCenterY);
+
+    // Vertical columns around the window openings
+    const wallLeft = -roomWidth / 2;
+    const wallRight = roomWidth / 2;
+    const leftWindowLeft = -windowOffsetX - windowWidth / 2;
+    const leftWindowRight = -windowOffsetX + windowWidth / 2;
+    const rightWindowLeft = windowOffsetX - windowWidth / 2;
+    const rightWindowRight = windowOffsetX + windowWidth / 2;
+    const columnHeight = roomHeight;
+    const columnCenterY = wallBottom + columnHeight / 2;
+
+    const leftColumnWidth = leftWindowLeft - wallLeft;
+    const leftColumnCenterX = wallLeft + leftColumnWidth / 2;
+    addWallSegment(leftColumnWidth, columnHeight, leftColumnCenterX, columnCenterY);
+
+    const middleColumnWidth = rightWindowLeft - leftWindowRight;
+    const middleColumnCenterX = leftWindowRight + middleColumnWidth / 2;
+    addWallSegment(middleColumnWidth, columnHeight, middleColumnCenterX, columnCenterY);
+
+    const rightColumnWidth = wallRight - rightWindowRight;
+    const rightColumnCenterX = rightWindowRight + rightColumnWidth / 2;
+    addWallSegment(rightColumnWidth, columnHeight, rightColumnCenterX, columnCenterY);
+
+    // Left wall
+    const leftWall = new Mesh(
+        new BoxGeometry(roomDepth, roomHeight, wallThickness),
+        wallMat
+    );
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.position.set(-roomWidth / 2, roomHeight / 2 - 2.0, -0.5);
+    group.add(leftWall);
+
+    // Right wall
+    const rightWall = leftWall.clone();
+    rightWall.position.x = roomWidth / 2;
+    group.add(rightWall);
+
+    // Ceiling
+    const ceiling = new Mesh(
+        new BoxGeometry(roomWidth, roomDepth, 0.4),
+        ceilingMat
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(0, roomHeight - 2.0, -0.5);
+    group.add(ceiling);
+
+    // Add windows into the back wall
+    const windows = buildBackWallWindows(backWallZ);
+    windows.forEach((w) => group.add(w));
+
+    return group;
+}
+
+function buildBackWallWindows(backWallZ) {
+    const windows = [];
+
+    const windowWidth = 2.4;
+    const windowHeight = 3.1;
+    const windowDepthOffset = 0.05; // sit just inside the room
+    const sillHeight = 0.9;
+    const frameThickness = 0.1;
+    const frameDepth = 0.12;
+    const mullionThickness = 0.05;
+
+    const frameMat = new MeshStandardMaterial({
+        color: 0xd4d7dd,
+        roughness: 0.5,
+        metalness: 0.1
+    });
+
+    const glassMat = new MeshStandardMaterial({
+        color: 0xa0c0ff,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.15,
+        metalness: 0.6,
+        side: DoubleSide
+    });
+
+    // Positions for two windows, left and right of the fireplace
+    const positions = [
+        new Vector3(-6.0, sillHeight + windowHeight / 2, backWallZ + windowDepthOffset),
+        new Vector3(6.0, sillHeight + windowHeight / 2, backWallZ + windowDepthOffset)
+    ];
+
+    positions.forEach((pos) => {
+        const winGroup = new Group();
+        winGroup.position.copy(pos);
+
+        // Outer frame as four slim pieces to leave the pane open
+        const halfW = windowWidth / 2;
+        const halfH = windowHeight / 2;
+
+        const vertical = new BoxGeometry(frameThickness, windowHeight, frameDepth);
+        const horizontal = new BoxGeometry(windowWidth, frameThickness, frameDepth);
+
+        const leftFrame = new Mesh(vertical, frameMat);
+        leftFrame.position.set(-halfW + frameThickness / 2, 0, 0);
+        winGroup.add(leftFrame);
+
+        const rightFrame = new Mesh(vertical, frameMat);
+        rightFrame.position.set(halfW - frameThickness / 2, 0, 0);
+        winGroup.add(rightFrame);
+
+        const topFrame = new Mesh(horizontal, frameMat);
+        topFrame.position.set(0, halfH - frameThickness / 2, 0);
+        winGroup.add(topFrame);
+
+        const bottomFrame = new Mesh(horizontal, frameMat);
+        bottomFrame.position.set(0, -halfH + frameThickness / 2, 0);
+        winGroup.add(bottomFrame);
+
+        // Glass plane, slightly inset
+        const glass = new Mesh(
+            new PlaneGeometry(windowWidth - frameThickness * 1.5, windowHeight - frameThickness * 1.5),
+            glassMat
+        );
+        glass.position.z = -frameThickness * 0.15;
+        winGroup.add(glass);
+
+        // Mullions: 3x2 panes (2 vertical bars, 1 horizontal)
+        const cols = 3;
+        const rows = 2;
+        const paneWidth = (windowWidth - frameThickness * 2) / cols;
+        const paneHeight = (windowHeight - frameThickness * 2) / rows;
+
+        // Vertical mullions between columns
+        for (let i = 1; i < cols; i++) {
+            const x = -windowWidth / 2 + frameThickness + i * paneWidth;
+            const vert = new Mesh(
+                new BoxGeometry(mullionThickness, windowHeight - frameThickness * 2, frameThickness * 0.7),
+                frameMat
+            );
+            vert.position.set(x, 0, 0);
+            winGroup.add(vert);
+        }
+
+        // Horizontal mullions between rows
+        for (let j = 1; j < rows; j++) {
+            const y = -windowHeight / 2 + frameThickness + j * paneHeight;
+            const horiz = new Mesh(
+                new BoxGeometry(windowWidth - frameThickness * 2, mullionThickness, frameThickness * 0.7),
+                frameMat
+            );
+            horiz.position.set(0, y, 0);
+            winGroup.add(horiz);
+        }
+
+        // Optional: subtle cool "moonlight" glow from the window
+        const sill = new Mesh(
+            new BoxGeometry(windowWidth * 1.05, 0.18, 0.4),
+            new MeshStandardMaterial({
+                color: 0xc0c4cf,
+                roughness: 0.9,
+                metalness: 0.15
+            })
+        );
+        sill.position.set(0, -windowHeight / 2 - 0.05, 0.1);
+        winGroup.add(sill);
+
+        windows.push(winGroup);
+    });
+
+    return windows;
 }
 
 function buildLogFlames(logMeshes) {
