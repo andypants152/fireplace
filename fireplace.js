@@ -1,16 +1,20 @@
 import {
     AmbientLight,
     BoxGeometry,
+    BufferGeometry,
     Clock,
     Color,
     ConeGeometry,
     CylinderGeometry,
+    Float32BufferAttribute,
     Matrix3,
     DoubleSide,
     Group,
     ACESFilmicToneMapping,
     Mesh,
     MeshStandardMaterial,
+    Points,
+    PointsMaterial,
     PerspectiveCamera,
     PlaneGeometry,
     PointLight,
@@ -79,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
     logs.updateMatrixWorld(true);
 
     const firePlanes = [];
+    let snow = null;
 
     const firePlane = buildFirePlane();
     firePlane.position.set(0, 0.18, -0.35);
@@ -97,9 +102,13 @@ document.addEventListener("DOMContentLoaded", () => {
         scene.add(flame);
     });
 
+    snow = buildSnowSystem();
+    scene.add(snow);
+
     const clock = new Clock();
     const crackle = createCrackleAudio();
     let audioStarted = false;
+    let lastTime = 0;
 
     function resize() {
         const width = canvas.clientWidth;
@@ -117,6 +126,8 @@ document.addEventListener("DOMContentLoaded", () => {
         requestAnimationFrame(animate);
         resize();
         const t = clock.getElapsedTime();
+        const delta = t - lastTime;
+        lastTime = t;
         firePlanes.forEach((fp) => {
             fp.material.uniforms.u_time.value = t;
             const target = fp.userData.lookAtTarget || camera.position;
@@ -128,6 +139,41 @@ document.addEventListener("DOMContentLoaded", () => {
             stockings.userData.stockings.forEach((s, i) => {
                 s.rotation.z = 0.03 * Math.sin(t * 0.8 + i * 0.7);
             });
+        }
+        if (snow) {
+            const positions = snow.geometry.getAttribute("position");
+            const speeds = snow.userData.speeds;
+            const spreadX = snow.userData.spreadX;
+            const spreadY = snow.userData.spreadY;
+            const spreadZ = snow.userData.spreadZ;
+
+            for (let i = 0; i < speeds.length; i++) {
+                const i3 = i * 3;
+                let x = positions.array[i3 + 0];
+                let y = positions.array[i3 + 1];
+                let z = positions.array[i3 + 2];
+
+                // Fall downward
+                y -= speeds[i] * delta;
+
+                // Gentle horizontal drift that depends on time and flake index
+                const sway = Math.sin(t * 0.6 + i * 0.37) * 0.25;
+                x += sway * delta;
+
+                // If flake goes below the "floor", respawn above
+                const floorY = -1.6;
+                if (y < floorY) {
+                    y = Math.random() * spreadY + 2.0;
+                    x = (Math.random() - 0.5) * spreadX;
+                    z = (Math.random() - 0.2) * spreadZ - 2;
+                }
+
+                positions.array[i3 + 0] = x;
+                positions.array[i3 + 1] = y;
+                positions.array[i3 + 2] = z;
+            }
+
+            positions.needsUpdate = true;
         }
         treeLights.userData.bulbs.forEach((bulb) => {
             const phase = bulb.userData.twinklePhase || 0;
@@ -390,6 +436,47 @@ function buildTreeLights(tree) {
 
     group.userData.bulbs = bulbs;
     return group;
+}
+
+function buildSnowSystem() {
+    const SNOW_COUNT = 400; // adjust for performance if needed
+
+    const geometry = new BufferGeometry();
+    const positions = new Float32BufferAttribute(SNOW_COUNT * 3, 3);
+    const speeds = new Float32Array(SNOW_COUNT);
+
+    // Snow volume: a loose box in front of the camera / fireplace
+    const spreadX = 10;
+    const spreadY = 7;
+    const spreadZ = 8;
+
+    for (let i = 0; i < SNOW_COUNT; i++) {
+        const i3 = i * 3;
+        positions.array[i3 + 0] = (Math.random() - 0.5) * spreadX; // x
+        positions.array[i3 + 1] = Math.random() * spreadY + 1.5; // y above floor
+        positions.array[i3 + 2] = (Math.random() - 0.2) * spreadZ - 2; // z in front of fireplace
+
+        // Slight speed variation per flake
+        speeds[i] = 0.3 + Math.random() * 0.4;
+    }
+
+    geometry.setAttribute("position", positions);
+
+    const material = new PointsMaterial({
+        size: 0.06,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false
+    });
+
+    const snow = new Points(geometry, material);
+    snow.userData.speeds = speeds;
+    snow.userData.spreadX = spreadX;
+    snow.userData.spreadY = spreadY;
+    snow.userData.spreadZ = spreadZ;
+
+    return snow;
 }
 
 function buildMantelStockings(fireplace) {
