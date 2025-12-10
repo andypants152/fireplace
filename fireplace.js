@@ -6,6 +6,7 @@ import {
     Color,
     ConeGeometry,
     CircleGeometry,
+    CatmullRomCurve3,
     CylinderGeometry,
     Float32BufferAttribute,
     Matrix3,
@@ -13,6 +14,7 @@ import {
     Group,
     ACESFilmicToneMapping,
     Mesh,
+    MeshBasicMaterial,
     MeshStandardMaterial,
     Points,
     PointsMaterial,
@@ -20,6 +22,7 @@ import {
     PlaneGeometry,
     PointLight,
     Scene,
+    TubeGeometry,
     SphereGeometry,
     ShaderMaterial,
     SRGBColorSpace,
@@ -78,20 +81,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const stockings = buildMantelStockings(fireplace);
     fireplace.add(stockings);
+    const garland = buildMantelGarland(fireplace);
+    fireplace.add(garland);
+    fireplace.userData.garland = garland;
 
     const tree = buildTree();
     tree.scale.setScalar(1.5);
     tree.position.set(4.2, -1.2, 2.2);
     scene.add(tree);
     tree.updateMatrixWorld(true);
+    const presents = buildPresents(tree);
+    scene.add(presents);
+    scene.userData.presents = presents;
     const treeLights = buildTreeLights(tree);
     scene.add(treeLights);
 
+    let rug = null;
     const logLayout = "teepee"; // teepee | cabin
     const { group: logs, logMeshes } = buildLogs(logLayout);
     logs.position.set(0, 0.15, 0.2 + fireplaceZOffset);
     scene.add(logs);
     logs.updateMatrixWorld(true);
+
+    rug = buildRug(fireplaceZOffset);
+    scene.add(rug);
 
     const firePlanes = [];
     let snow = null;
@@ -255,6 +268,34 @@ document.addEventListener("DOMContentLoaded", () => {
                 tree.rotation.z = 0.01 * Math.sin(t * 0.4 + swayOffset);
             });
         }
+        if (fireplace.userData.garland && fireplace.userData.garland.userData.bulbs) {
+            fireplace.userData.garland.userData.bulbs.forEach((bulb) => {
+                const phase = bulb.userData.twinklePhase || 0;
+                const base = bulb.userData.baseIntensity || 2.0;
+                const speed = bulb.userData.twinkleSpeed || 2.0;
+                const amp = bulb.userData.twinkleAmp || 0.8;
+                const slowPulse = Math.sin(t * 0.35 + phase * 0.5) * (amp * 0.6);
+                const fastFlicker = Math.sin(t * speed + phase) * (amp * 0.4);
+                const intensity = Math.max(0.3, base + slowPulse + fastFlicker);
+                bulb.material.emissiveIntensity = intensity;
+                if (bulb.userData.halo) {
+                    const s = 1.0 + (intensity - base) * 0.25;
+                    bulb.userData.halo.scale.setScalar(1.0 + Math.max(0, s));
+                }
+            });
+        }
+        if (rug) {
+            const baseY = typeof rug.userData.baseY === "number" ? rug.userData.baseY : rug.position.y;
+            rug.userData.baseY = baseY;
+            rug.position.y = baseY + Math.sin(t * 0.8) * 0.01;
+        }
+        if (scene.userData.presents) {
+            const time = t;
+            scene.userData.presents.children.forEach((gift, idx) => {
+                const wobble = 0.01 * Math.sin(time * 0.9 + idx * 0.8);
+                gift.rotation.y = (gift.userData.baseRotY || 0) + wobble * 0.05;
+            });
+        }
         treeLights.userData.bulbs.forEach((bulb) => {
             const phase = bulb.userData.twinklePhase || 0;
             const base = bulb.userData.baseIntensity || 2.2;
@@ -413,6 +454,129 @@ function buildLogs(layout = "teepee") {
     }
 
     return { group, logMeshes };
+}
+
+function buildMantelGarland(fireplace) {
+    const group = new Group();
+    const top = fireplace.userData.mantelTop;
+    if (!top || !top.geometry || !top.geometry.parameters) return group;
+
+    const params = top.geometry.parameters || {};
+    const width = params.width || 6.9;
+    const depth = params.depth || 2.6;
+    const halfW = width / 2;
+    const baseY = top.position.y + 0.08;
+    const frontZ = top.position.z + depth / 2 + (0.05 + Math.random() * 0.02);
+
+    const anchorCount = 5 + Math.floor(Math.random() * 3); // 5–7 anchors
+    const anchors = [];
+    for (let i = 0; i < anchorCount; i++) {
+        const t = i / (anchorCount - 1);
+        const xJitter = (Math.random() - 0.5) * 0.16; // +/-0.08
+        const yJitter = (Math.random() - 0.5) * 0.06; // +/-0.03
+        const x = -halfW + t * width + xJitter;
+        const sag = (i === 0 || i === anchorCount - 1) ? 0 : 0.16 + Math.random() * 0.08;
+        const y = baseY - sag + yJitter;
+        anchors.push(new Vector3(x, y, frontZ));
+    }
+
+    const curve = new CatmullRomCurve3(anchors);
+    const vine = new Mesh(
+        new TubeGeometry(curve, 120, 0.045, 10, false),
+        new MeshStandardMaterial({
+            color: 0x294833,
+            roughness: 0.9,
+            metalness: 0.05
+        })
+    );
+    group.add(vine);
+
+    const leafGeo = new PlaneGeometry(0.25, 0.14);
+    const leafBase = new Color(0x3f7a56);
+    const curvePoints = curve.getPoints(80);
+    for (let i = 4; i < curvePoints.length - 4; i += 4) {
+        const t = i / (curvePoints.length - 1);
+        const pos = curve.getPoint(t);
+        const tangent = curve.getTangent(t).normalize();
+        const up = new Vector3(0, 1, 0);
+        let normal = up.clone().cross(tangent);
+        if (normal.lengthSq() < 1e-4) normal = new Vector3(1, 0, 0).cross(tangent);
+        normal.normalize();
+        const binormal = tangent.clone().cross(normal).normalize();
+
+        const cluster = 2 + Math.floor(Math.random() * 3); // 2–4 leaves
+        for (let c = 0; c < cluster; c++) {
+            const mat = new MeshStandardMaterial({
+                color: leafBase.clone().multiplyScalar(0.85 + Math.random() * 0.3),
+                roughness: 0.9,
+                metalness: 0.05,
+                side: DoubleSide
+            });
+            const leaf = new Mesh(leafGeo, mat);
+            const out = normal.clone().multiplyScalar(0.025 + Math.random() * 0.025);
+            const lift = new Vector3(0, 0.02 + Math.random() * 0.04, 0);
+            const spread = binormal.clone().multiplyScalar((Math.random() - 0.5) * 0.06);
+            leaf.position.copy(pos).add(out).add(lift).add(spread);
+
+            const dir = normal.clone().add(new Vector3(0, 0.2, 0)).normalize();
+            leaf.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+            leaf.rotateOnAxis(dir, (Math.random() - 0.5) * 1.0);
+            leaf.rotateOnAxis(tangent, (Math.random() - 0.5) * 0.6);
+            group.add(leaf);
+        }
+    }
+
+    const bulbs = [];
+    const bulbGeo = new SphereGeometry(0.055, 10, 10);
+    const haloGeo = new SphereGeometry(0.09, 10, 10);
+    const palette = [0xfff1b3, 0xffd1b3, 0xffb3d9, 0xb3d9ff, 0xc9ffb3];
+    const bulbCount = 10 + Math.floor(Math.random() * 5); // 10–14
+    for (let i = 0; i < bulbCount; i++) {
+        const baseT = bulbCount === 1 ? 0.5 : i / (bulbCount - 1);
+        const jitter = (Math.random() - 0.5) * 0.04; // +/-0.02
+        const t = Math.min(1, Math.max(0, baseT + jitter));
+        const pos = curve.getPoint(t);
+        const tangent = curve.getTangent(t).normalize();
+        let normal = new Vector3(0, 1, 0).cross(tangent);
+        if (normal.lengthSq() < 1e-4) normal = new Vector3(1, 0, 0).cross(tangent);
+        normal.normalize();
+
+        const emissive = new Color(palette[Math.floor(Math.random() * palette.length)]);
+        const emissiveIntensity = 1.7 + Math.random() * 0.9;
+        const bulbMat = new MeshStandardMaterial({
+            color: 0x111111,
+            emissive,
+            emissiveIntensity,
+            roughness: 0.3,
+            metalness: 0.2
+        });
+        const bulb = new Mesh(bulbGeo, bulbMat);
+        const offset = normal.clone().multiplyScalar(0.05 + Math.random() * 0.015).add(new Vector3(0, 0.03, 0.04));
+        bulb.position.copy(pos).add(offset);
+
+        const halo = new Mesh(
+            haloGeo,
+            new MeshBasicMaterial({
+                color: emissive.clone(),
+                transparent: true,
+                opacity: 0.25,
+                depthWrite: false
+            })
+        );
+        halo.scale.setScalar(1);
+        bulb.add(halo);
+        bulb.userData.halo = halo;
+        bulb.userData.twinklePhase = Math.random() * Math.PI * 2;
+        bulb.userData.baseIntensity = emissiveIntensity;
+        bulb.userData.twinkleSpeed = 1.5 + Math.random() * 1.2;
+        bulb.userData.twinkleAmp = 0.7 + Math.random() * 0.5;
+        group.add(bulb);
+        bulbs.push(bulb);
+    }
+
+    group.userData.bulbs = bulbs;
+    group.position.y -= 0.03 + Math.random() * 0.02;
+    return group;
 }
 
 // Build a simple low-poly evergreen tree.
@@ -663,6 +827,172 @@ function buildWinterScene(baseSnowZ = -4.6) {
 
     group.userData.trees = trees;
     group.userData.zOffset = zOffset;
+
+    return group;
+}
+
+function buildRug(fireplaceZOffset) {
+    const width = 5.5;
+    const height = 3.2;
+    const geometry = new PlaneGeometry(width, height, 16, 8);
+    const positions = geometry.attributes.position;
+    const halfW = width / 2;
+    const halfH = height / 2;
+    const colors = new Float32Array(positions.count * 3);
+    const baseColor = new Color(0x754c3a);
+
+    for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const y = positions.getY(i);
+        const edge = Math.max(Math.abs(x) / halfW, Math.abs(y) / halfH);
+        const lift = 0.08 * Math.pow(edge, 2.2);
+        positions.setZ(i, lift);
+
+        const shade = 1.05 - edge * 0.25;
+        colors[i * 3 + 0] = baseColor.r * shade;
+        colors[i * 3 + 1] = baseColor.g * shade;
+        colors[i * 3 + 2] = baseColor.b * shade;
+    }
+    positions.needsUpdate = true;
+    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+
+    const material = new MeshStandardMaterial({
+        color: baseColor,
+        roughness: 0.95,
+        metalness: 0.0,
+        vertexColors: true
+    });
+
+    const rug = new Mesh(geometry, material);
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set(0, -1.48, fireplaceZOffset + 4.3);
+    rug.userData.baseY = rug.position.y;
+
+    return rug;
+}
+
+function buildPresents(tree) {
+    const group = new Group();
+    const wrapColors = [0xe74c3c, 0x27ae60, 0x2980b9, 0xf1c40f, 0x9b59b6];
+    const ribbonColors = [0xffffff, 0xfff4d6, 0x222222];
+    const giftCount = 5 + Math.floor(Math.random() * 3); // 5–7
+
+    const bounds = { minX: -8.0, maxX: -4.2, minZ: -0.8, maxZ: 2.6 };
+
+    const gifts = [];
+    const placed = [];
+
+    function makePresent(width, height, depth, wrapColor, ribbonColor) {
+        const gift = new Group();
+        const box = new Mesh(
+            new BoxGeometry(width, height, depth),
+            new MeshStandardMaterial({
+                color: wrapColor,
+                roughness: 0.85,
+                metalness: 0.05
+            })
+        );
+        gift.add(box);
+
+        const ribbonMat = new MeshStandardMaterial({
+            color: ribbonColor,
+            roughness: 0.6,
+            metalness: 0.2
+        });
+        const thickness = 0.04;
+        const ribbonX = new Mesh(new BoxGeometry(width * 1.02, thickness, thickness), ribbonMat);
+        ribbonX.position.y = height / 2 + thickness / 2 + 0.005;
+        gift.add(ribbonX);
+
+        const ribbonZ = new Mesh(new BoxGeometry(thickness, thickness, depth * 1.02), ribbonMat);
+        ribbonZ.position.y = height / 2 + thickness / 2 + 0.005;
+        gift.add(ribbonZ);
+
+        const bow = new Group();
+        const bowArmA = new Mesh(new BoxGeometry(0.16, 0.02, 0.06), ribbonMat);
+        bowArmA.rotation.y = Math.PI / 4;
+        bow.add(bowArmA);
+        const bowArmB = new Mesh(new BoxGeometry(0.16, 0.02, 0.06), ribbonMat);
+        bowArmB.rotation.y = -Math.PI / 4;
+        bow.add(bowArmB);
+        bow.position.y = height / 2 + 0.03;
+        gift.add(bow);
+
+        return gift;
+    }
+
+    for (let i = 0; i < giftCount; i++) {
+        const width = 0.6 + Math.random() * 0.6;
+        const depth = 0.6 + Math.random() * 0.6;
+        const height = 0.4 + Math.random() * 0.6;
+        const wrapColor = wrapColors[Math.floor(Math.random() * wrapColors.length)];
+        const ribbonColor = ribbonColors[Math.floor(Math.random() * ribbonColors.length)];
+        const gift = makePresent(width, height, depth, wrapColor, ribbonColor);
+
+        const radius = 0.5 * Math.max(width, depth);
+        let chosenPos = new Vector3();
+        let accepted = false;
+        let attempt = 0;
+        let lastPos = null;
+        while (!accepted && attempt < 20) {
+            const x = bounds.minX + Math.random() * (bounds.maxX - bounds.minX);
+            const nearFire = Math.random() < 0.6;
+            const zMin = nearFire ? 0.5 : bounds.minZ;
+            const zMax = bounds.maxZ;
+            const z = zMin + Math.random() * (zMax - zMin);
+            const candidate = new Vector3(x, -1.5 + height / 2 + 0.02, z);
+            lastPos = candidate.clone();
+            let ok = true;
+            for (const p of placed) {
+                const minDist = radius + p.radius + 0.15;
+                if (candidate.distanceTo(p.pos) < minDist) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                chosenPos.copy(candidate);
+                accepted = true;
+                break;
+            }
+            attempt++;
+        }
+        if (!accepted && lastPos) {
+            chosenPos.copy(lastPos);
+        }
+
+        chosenPos.x = Math.min(Math.max(chosenPos.x, bounds.minX), bounds.maxX);
+        chosenPos.z = Math.min(Math.max(chosenPos.z, bounds.minZ), bounds.maxZ);
+        gift.position.copy(chosenPos);
+
+        if (Math.random() < 0.4) {
+            gift.rotation.y = (Math.random() < 0.5 ? -1 : 1) * (0.12 + Math.random() * 0.12);
+        }
+        gift.userData.baseRotY = gift.rotation.y;
+
+        group.add(gift);
+        placed.push({ pos: chosenPos.clone(), radius, height });
+        gifts.push({ gift, height });
+    }
+
+    if (gifts.length >= 2 && Math.random() < 0.6) {
+        const baseIdx = Math.floor(Math.random() * gifts.length);
+        const baseGift = gifts[baseIdx];
+        const topWidth = 0.4 + Math.random() * 0.4;
+        const topDepth = 0.4 + Math.random() * 0.4;
+        const topHeight = 0.25 + Math.random() * 0.35;
+        const wrapColor = wrapColors[Math.floor(Math.random() * wrapColors.length)];
+        const ribbonColor = ribbonColors[Math.floor(Math.random() * ribbonColors.length)];
+        const topGift = makePresent(topWidth, topHeight, topDepth, wrapColor, ribbonColor);
+        const gap = 0.03;
+        topGift.position.copy(baseGift.gift.position);
+        topGift.position.y = baseGift.gift.position.y + baseGift.height / 2 + topHeight / 2 + gap;
+        topGift.rotation.y = (Math.random() - 0.5) * 0.3;
+        topGift.userData.baseRotY = topGift.rotation.y;
+        group.add(topGift);
+        gifts.push({ gift: topGift, height: topHeight });
+    }
 
     return group;
 }
