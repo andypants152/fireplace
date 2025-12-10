@@ -5,6 +5,7 @@ import {
     Clock,
     Color,
     ConeGeometry,
+    CircleGeometry,
     CylinderGeometry,
     Float32BufferAttribute,
     Matrix3,
@@ -94,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const firePlanes = [];
     let snow = null;
+    let winterScene = null;
     const pointer = new Vector2(0, 0);
     const gyroInput = new Vector2(0, 0);
     let gyroEnabled = false;
@@ -119,6 +121,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     snow = buildSnowSystem();
     scene.add(snow);
+    winterScene = buildWinterScene(snow.userData.baseZ);
+    scene.add(winterScene);
 
     const clock = new Clock();
     const crackle = createCrackleAudio();
@@ -244,6 +248,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             positions.needsUpdate = true;
+        }
+        if (winterScene && winterScene.userData.trees) {
+            winterScene.userData.trees.forEach((tree) => {
+                const swayOffset = tree.userData.swayOffset || 0;
+                tree.rotation.z = 0.01 * Math.sin(t * 0.4 + swayOffset);
+            });
         }
         treeLights.userData.bulbs.forEach((bulb) => {
             const phase = bulb.userData.twinklePhase || 0;
@@ -555,6 +565,106 @@ function buildSnowSystem() {
     snow.frustumCulled = false; // keep visible when camera skews past one window
 
     return snow;
+}
+
+function buildWinterScene(baseSnowZ = -4.6) {
+    const group = new Group();
+    const zOffset = (typeof baseSnowZ === "number" ? baseSnowZ : -4.6) - 1.2;
+    group.position.set(0, 0, zOffset);
+
+    const sky = new Mesh(
+        new PlaneGeometry(40, 20),
+        new ShaderMaterial({
+            side: DoubleSide,
+            depthWrite: false,
+            uniforms: {
+                u_topColor: { value: new Color(0x0a1020) },
+                u_bottomColor: { value: new Color(0x2f5686) }
+            },
+            vertexShader: `
+                varying vec2 v_uv;
+                void main() {
+                    v_uv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                precision mediump float;
+                varying vec2 v_uv;
+                uniform vec3 u_topColor;
+                uniform vec3 u_bottomColor;
+                void main() {
+                    float g = smoothstep(0.0, 1.0, v_uv.y);
+                    vec3 color = mix(u_bottomColor, u_topColor, g);
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        })
+    );
+    sky.position.set(0, 4.0, 0);
+    group.add(sky);
+
+    const moon = new Mesh(
+        new CircleGeometry(0.7, 32),
+        new MeshStandardMaterial({
+            color: 0xf5f0d0,
+            emissive: new Color(0xf8eccc),
+            emissiveIntensity: 1.2,
+            roughness: 0.3,
+            metalness: 0.0
+        })
+    );
+    moon.position.set(6.8, 3.6, -0.6);
+    group.add(moon);
+
+    const groundGeo = new PlaneGeometry(40, 5, 24, 4);
+    const groundPositions = groundGeo.attributes.position;
+    const halfWidth = 20;
+    for (let i = 0; i < groundPositions.count; i++) {
+        const x = groundPositions.getX(i);
+        const y = groundPositions.getY(i);
+        const curve = 0.25 * (1 - Math.pow(x / halfWidth, 2));
+        groundPositions.setY(i, y + curve - 0.1);
+    }
+    groundPositions.needsUpdate = true;
+    groundGeo.computeVertexNormals();
+
+    const ground = new Mesh(
+        groundGeo,
+        new MeshStandardMaterial({
+            color: 0xcfd8e4,
+            roughness: 1.0,
+            metalness: 0.05
+        })
+    );
+    ground.position.set(0, 0.35, -0.1);
+    group.add(ground);
+
+    const treeGroup = new Group();
+    const trees = [];
+    const treeMat = new MeshStandardMaterial({
+        color: 0x0d0f12,
+        roughness: 1.0,
+        metalness: 0.0
+    });
+    const treeCount = 12 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < treeCount; i++) {
+        const height = 1.4 + Math.random() * 1.0;
+        const radius = height * 0.35;
+        const x = -12 + Math.random() * 24;
+        const pine = new Mesh(new ConeGeometry(radius, height, 8), treeMat);
+        pine.position.set(x, 1.5 + height / 2 + (Math.random() - 0.5) * 0.05, 0.22 + Math.random() * 0.08);
+        pine.rotation.y = Math.random() * Math.PI * 2;
+        pine.userData.swayOffset = Math.random() * Math.PI * 2;
+        treeGroup.add(pine);
+        trees.push(pine);
+    }
+    group.add(treeGroup);
+
+    group.userData.trees = trees;
+    group.userData.zOffset = zOffset;
+
+    return group;
 }
 
 function buildMantelStockings(fireplace) {
