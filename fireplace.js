@@ -603,6 +603,152 @@ function buildMantelGarland(fireplace) {
     return group;
 }
 
+function buildRoomGarlands(roomWidth, roomDepth, roomHeight, backWallZ) {
+    const group = new Group();
+
+    const garlandY = (roomHeight - 2.0) - 0.35;
+    const backZ = backWallZ + 0.35;
+    const leftX = -roomWidth * 0.5 + 0.32;
+    const rightX = roomWidth * 0.5 - 0.32;
+    const frontZ = (roomDepth * 0.5) - 0.8;
+    const sag = 0.85;
+    const centerSag = 0.12;
+    const cornerInset = 0.6;
+    const leftEdge = leftX + cornerInset;
+    const rightEdge = rightX - cornerInset;
+
+    const leafGeo = new PlaneGeometry(0.25, 0.14);
+    const leafBase = new Color(0x3f7a56);
+    const bulbs = [];
+    const bulbGeo = new SphereGeometry(0.055, 10, 10);
+    const haloGeo = new SphereGeometry(0.09, 10, 10);
+    const palette = [0xfff1b3, 0xffd1b3, 0xffb3d9, 0xb3d9ff, 0xc9ffb3];
+
+    function addGarland(anchors, opts = {}) {
+        const leafStep = typeof opts.leafStep === "number" ? opts.leafStep : 4;
+        const bulbMin = typeof opts.bulbMin === "number" ? opts.bulbMin : 10;
+        const bulbMax = typeof opts.bulbMax === "number" ? opts.bulbMax : 14;
+
+        const curve = new CatmullRomCurve3(anchors);
+        const vineGeo = new TubeGeometry(curve, 120, 0.045, 10, false);
+        const vineMat = new MeshStandardMaterial({
+            color: 0x294833,
+            roughness: 0.9,
+            metalness: 0.05
+        });
+        const vine = new Mesh(vineGeo, vineMat);
+        group.add(vine);
+
+        const curvePoints = curve.getPoints(80);
+        for (let i = 4; i < curvePoints.length - 4; i += leafStep) {
+            const t = i / (curvePoints.length - 1);
+            const pos = curve.getPoint(t);
+            const tangent = curve.getTangent(t).normalize();
+            const up = new Vector3(0, 1, 0);
+            let normal = up.clone().cross(tangent);
+            if (normal.lengthSq() < 1e-4) normal = new Vector3(1, 0, 0).cross(tangent);
+            normal.normalize();
+            const binormal = tangent.clone().cross(normal).normalize();
+
+            const cluster = 2 + Math.floor(Math.random() * 3); // 2–4 leaves
+            for (let c = 0; c < cluster; c++) {
+                const mat = new MeshStandardMaterial({
+                    color: leafBase.clone().multiplyScalar(0.85 + Math.random() * 0.3),
+                    roughness: 0.9,
+                    metalness: 0.05,
+                    side: DoubleSide
+                });
+                const leaf = new Mesh(leafGeo, mat);
+                const out = normal.clone().multiplyScalar(0.025 + Math.random() * 0.025);
+                const lift = new Vector3(0, 0.02 + Math.random() * 0.04, 0);
+                const spread = binormal.clone().multiplyScalar((Math.random() - 0.5) * 0.06);
+                leaf.position.copy(pos).add(out).add(lift).add(spread);
+
+                const dir = normal.clone().add(new Vector3(0, 0.2, 0)).normalize();
+                leaf.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+                leaf.rotateOnAxis(dir, (Math.random() - 0.5) * 1.0);
+                leaf.rotateOnAxis(tangent, (Math.random() - 0.5) * 0.6);
+                group.add(leaf);
+            }
+        }
+
+        const bulbRange = Math.max(0, bulbMax - bulbMin);
+        const bulbCount = bulbMin + Math.floor(Math.random() * (bulbRange + 1)); // variable count
+        for (let i = 0; i < bulbCount; i++) {
+            const baseT = bulbCount === 1 ? 0.5 : i / (bulbCount - 1);
+            const jitter = (Math.random() - 0.5) * 0.04; // +/-0.02
+            const t = Math.min(1, Math.max(0, baseT + jitter));
+            const pos = curve.getPoint(t);
+            const tangent = curve.getTangent(t).normalize();
+            let normal = new Vector3(0, 1, 0).cross(tangent);
+            if (normal.lengthSq() < 1e-4) normal = new Vector3(1, 0, 0).cross(tangent);
+            normal.normalize();
+
+            const emissive = new Color(palette[Math.floor(Math.random() * palette.length)]);
+            const emissiveIntensity = 1.7 + Math.random() * 0.9;
+            const bulbMat = new MeshStandardMaterial({
+                color: 0x111111,
+                emissive,
+                emissiveIntensity,
+                roughness: 0.3,
+                metalness: 0.2
+            });
+            const bulb = new Mesh(bulbGeo, bulbMat);
+            const offset = normal.clone().multiplyScalar(0.05 + Math.random() * 0.015).add(new Vector3(0, 0.03, 0.04));
+            bulb.position.copy(pos).add(offset);
+
+            const halo = new Mesh(
+                haloGeo,
+                new MeshBasicMaterial({
+                    color: emissive.clone(),
+                    transparent: true,
+                    opacity: 0.25,
+                    depthWrite: false
+                })
+            );
+            halo.scale.setScalar(1);
+            bulb.add(halo);
+            bulb.userData.halo = halo;
+            bulb.userData.twinklePhase = Math.random() * Math.PI * 2;
+            bulb.userData.baseIntensity = emissiveIntensity;
+            bulb.userData.twinkleSpeed = 1.5 + Math.random() * 1.2;
+            bulb.userData.twinkleAmp = 0.7 + Math.random() * 0.5;
+            group.add(bulb);
+            bulbs.push(bulb);
+        }
+    }
+
+    const backAnchors = [
+        new Vector3(leftEdge, garlandY, backZ),
+        new Vector3(leftEdge * 0.35, garlandY - sag, backZ),
+        new Vector3(0, garlandY - centerSag, backZ),
+        new Vector3(rightEdge * 0.35, garlandY - sag, backZ),
+        new Vector3(rightEdge, garlandY, backZ)
+    ];
+
+    const midZ = backZ + (frontZ - backZ) * 0.35;
+
+    const leftAnchors = [
+        new Vector3(leftEdge, garlandY, backZ + 0.12),
+        new Vector3(leftEdge, garlandY - sag, midZ),
+        new Vector3(leftX + 0.18, garlandY - sag * 0.45, frontZ)
+    ];
+
+    const rightAnchors = [
+        new Vector3(rightEdge, garlandY, backZ + 0.12),
+        new Vector3(rightEdge, garlandY - sag, midZ),
+        new Vector3(rightX - 0.18, garlandY - sag * 0.45, frontZ)
+    ];
+
+    addGarland(backAnchors);
+    addGarland(leftAnchors, { leafStep: 8, bulbMin: 6, bulbMax: 9 });
+    addGarland(rightAnchors, { leafStep: 8, bulbMin: 6, bulbMax: 9 });
+
+    group.userData.bulbs = bulbs;
+
+    return group;
+}
+
 // Build a simple low-poly evergreen tree.
 function buildTree() {
     const group = new Group();
@@ -1242,6 +1388,9 @@ function buildRoom() {
     // Add windows into the back wall
     const windows = buildBackWallWindows(backWallZ);
     windows.forEach((w) => group.add(w));
+
+    const ceilingGarlands = buildRoomGarlands(roomWidth, roomDepth, roomHeight, backWallZ);
+    group.add(ceilingGarlands);
 
     return group;
 }
