@@ -42,6 +42,43 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
+    const style = document.createElement("style");
+    style.textContent = `
+        #rotate-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            background: rgba(0,0,0,0.9);
+            color: #ffffff;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 1.2rem;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        #rotate-overlay span {
+            max-width: 20rem;
+            line-height: 1.4;
+            opacity: 0.9;
+        }
+    `;
+    document.head.appendChild(style);
+
+    let rotateOverlay = null;
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+        rotateOverlay = document.createElement("div");
+        rotateOverlay.id = "rotate-overlay";
+        const msg = document.createElement("span");
+        msg.textContent = "Rotate your phone for the best view of the fireplace.";
+        rotateOverlay.appendChild(msg);
+        document.body.appendChild(rotateOverlay);
+    }
+
     const renderer = new WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(new Color(0x0b0d13), 1);
@@ -161,6 +198,14 @@ document.addEventListener("DOMContentLoaded", () => {
         pointer.set(x, y);
     }
 
+    function updateRotateOverlay() {
+        if (!rotateOverlay) return;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const isPortrait = h > w;
+        rotateOverlay.style.display = isPortrait ? "flex" : "none";
+    }
+
     function handleDeviceOrientation(e) {
         if (e.gamma === null || e.beta === null) return;
         const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -191,6 +236,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.addEventListener("pointermove", updatePointerFromEvent);
     window.addEventListener("pointerdown", updatePointerFromEvent);
+    window.addEventListener("resize", updateRotateOverlay);
+    window.addEventListener("orientationchange", () => {
+        setTimeout(updateRotateOverlay, 200);
+    });
 
     function toggleAudio() {
         requestGyroAccess();
@@ -372,6 +421,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Start audio on first interaction to satisfy autoplay policies.
     window.addEventListener("pointerdown", toggleAudio);
+    updateRotateOverlay();
 });
 
 function buildFireplace() {
