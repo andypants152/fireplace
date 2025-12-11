@@ -24,6 +24,7 @@ import {
     PlaneGeometry,
     PointLight,
     Scene,
+    HemisphereLight,
     TubeGeometry,
     Shape,
     SphereGeometry,
@@ -46,7 +47,8 @@ document.addEventListener("DOMContentLoaded", () => {
     renderer.setClearColor(new Color(0x0b0d13), 1);
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    const baseExposure = 1.45;
+    renderer.toneMappingExposure = baseExposure;
 
     const fireplaceZOffset = -2;
     const scene = new Scene();
@@ -59,7 +61,10 @@ document.addEventListener("DOMContentLoaded", () => {
     camera.position.copy(cameraBasePos);
     camera.lookAt(cameraTarget);
 
-    scene.add(new AmbientLight(0xffffff, 0.55));
+    scene.add(new AmbientLight(0xffffff, 0.7));
+    const hemiLight = new HemisphereLight(new Color(0x7282a0), new Color(0x1a1c22), 0.32);
+    hemiLight.position.set(0, 6, 0);
+    scene.add(hemiLight);
     const fillLight = new PointLight(0xf4ead9, 2.5, 40, 2);
     fillLight.position.set(0, 4.8, 12.5);
     scene.add(fillLight);
@@ -72,7 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const floor = new Mesh(
         new PlaneGeometry(18, 16),
-        new MeshStandardMaterial({ color: 0x14171e, roughness: 1, metalness: 0 })
+        new MeshStandardMaterial({ color: 0x242a38, roughness: 1, metalness: 0 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -1.5;
@@ -146,6 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const clock = new Clock();
     const crackle = createCrackleAudio();
     let audioStarted = false;
+    let audioPlaying = false;
     let lastTime = 0;
 
     function updatePointerFromEvent(e) {
@@ -186,13 +192,34 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("pointermove", updatePointerFromEvent);
     window.addEventListener("pointerdown", updatePointerFromEvent);
 
+    function toggleAudio() {
+        requestGyroAccess();
+        if (!audioStarted) {
+            crackle.start();
+            audioStarted = true;
+            audioPlaying = true;
+            return;
+        }
+        if (audioPlaying) {
+            crackle.stop();
+            audioPlaying = false;
+        } else {
+            crackle.start();
+            audioPlaying = true;
+        }
+    }
+
     function resize() {
         const width = canvas.clientWidth;
         const height = canvas.clientHeight;
         const needsResize = canvas.width !== width || canvas.height !== height;
         if (needsResize) {
             renderer.setSize(width, height, false);
-            camera.aspect = width / height;
+            const aspect = width / height;
+            camera.aspect = aspect;
+            const portraitBoost = Math.max(0, 1 - aspect);
+            camera.fov = 50 + portraitBoost * 18; // widen FOV a bit in portrait for better fit
+            renderer.toneMappingExposure = baseExposure + portraitBoost * 0.8; // brighten more in portrait
             camera.updateProjectionMatrix();
             firePlanes.forEach((fp) => fp.material.uniforms.u_resolution.value.set(width, height));
         }
@@ -344,17 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
     animate();
 
     // Start audio on first interaction to satisfy autoplay policies.
-    window.addEventListener(
-        "pointerdown",
-        () => {
-            requestGyroAccess();
-            if (!audioStarted) {
-                crackle.start();
-                audioStarted = true;
-            }
-        },
-        { once: true }
-    );
+    window.addEventListener("pointerdown", toggleAudio);
 });
 
 function buildFireplace() {
@@ -1089,7 +1106,7 @@ function buildRug(fireplaceZOffset) {
     const halfW = width / 2;
     const halfH = height / 2;
     const colors = new Float32Array(positions.count * 3);
-    const baseColor = new Color(0x754c3a);
+    const baseColor = new Color(0xa67658);
 
     for (let i = 0; i < positions.count; i++) {
         const x = positions.getX(i);
@@ -1098,7 +1115,7 @@ function buildRug(fireplaceZOffset) {
         const lift = 0.08 * Math.pow(edge, 2.2);
         positions.setZ(i, lift);
 
-        const shade = 1.05 - edge * 0.25;
+        const shade = 1.12 - edge * 0.18;
         colors[i * 3 + 0] = baseColor.r * shade;
         colors[i * 3 + 1] = baseColor.g * shade;
         colors[i * 3 + 2] = baseColor.b * shade;
@@ -1297,13 +1314,13 @@ function buildRoom() {
 
     // Basic materials
     const wallMat = new MeshStandardMaterial({
-        color: 0x222630,
+        color: 0x384255,
         roughness: 0.92,
         metalness: 0.02
     });
 
     const ceilingMat = new MeshStandardMaterial({
-        color: 0x303545,
+        color: 0x4c5670,
         roughness: 0.9,
         metalness: 0.03
     });
@@ -1674,7 +1691,22 @@ function createCrackleAudio() {
         return { source, lfo };
     }
 
-    return { start };
+    function stop() {
+        if (crackleTimeout) {
+            clearTimeout(crackleTimeout);
+            crackleTimeout = null;
+        }
+        if (rumble) {
+            try { rumble.source.stop(); } catch (e) {}
+            try { rumble.lfo.stop(); } catch (e) {}
+            rumble = null;
+        }
+        if (ctx && ctx.state === "running") {
+            ctx.suspend();
+        }
+    }
+
+    return { start, stop };
 }
 
 function buildFirePlane(options = {}) {
