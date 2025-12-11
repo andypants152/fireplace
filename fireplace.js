@@ -1,5 +1,6 @@
 import {
     AmbientLight,
+    Box3,
     BoxGeometry,
     BufferGeometry,
     Clock,
@@ -11,6 +12,7 @@ import {
     Float32BufferAttribute,
     Matrix3,
     DoubleSide,
+    ExtrudeGeometry,
     Group,
     ACESFilmicToneMapping,
     Mesh,
@@ -23,6 +25,7 @@ import {
     PointLight,
     Scene,
     TubeGeometry,
+    Shape,
     SphereGeometry,
     ShaderMaterial,
     SRGBColorSpace,
@@ -90,6 +93,9 @@ document.addEventListener("DOMContentLoaded", () => {
     tree.position.set(4.2, -1.2, 2.2);
     scene.add(tree);
     tree.updateMatrixWorld(true);
+    const treeStar = buildTreeStar(tree);
+    scene.add(treeStar);
+    scene.userData.treeStar = treeStar;
     const presents = buildPresents(tree);
     scene.add(presents);
     scene.userData.presents = presents;
@@ -295,6 +301,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 const wobble = 0.01 * Math.sin(time * 0.9 + idx * 0.8);
                 gift.rotation.y = (gift.userData.baseRotY || 0) + wobble * 0.05;
             });
+        }
+        if (scene.userData.treeStar) {
+            const starMesh = scene.userData.treeStar.userData.starMesh;
+            if (starMesh && starMesh.userData.halo) {
+                const halo = starMesh.userData.halo;
+
+                // Pulse the halo with soft breathing motion
+                const baseScale = 1.0;
+                const pulse = 0.12 * Math.sin(t * 2.0);  // gentle pulse
+                const s = baseScale + pulse;
+
+                halo.scale.setScalar(s);
+
+                // Optional slight opacity pulse to match scale:
+                if (halo.material && halo.material.transparent) {
+                    halo.material.opacity = 0.22 + 0.08 * Math.abs(Math.sin(t * 2.0));
+                }
+            }
         }
         treeLights.userData.bulbs.forEach((bulb) => {
             const phase = bulb.userData.twinklePhase || 0;
@@ -611,6 +635,86 @@ function buildTree() {
         cone.position.y = layer.y;
         group.add(cone);
     });
+
+    return group;
+}
+
+function createStarGeometry(innerRadius, outerRadius, depth) {
+    const shape = new Shape();
+    const spikes = 5;
+    const step = Math.PI / spikes;
+    let rot = -Math.PI / 2.0; // start pointing up
+    let x = 0;
+    let y = 0;
+
+    shape.moveTo(0, -outerRadius);
+    for (let i = 0; i < spikes * 2; i++) {
+        const r = (i % 2 === 0) ? outerRadius : innerRadius;
+        x = Math.cos(rot) * r;
+        y = Math.sin(rot) * r;
+        shape.lineTo(x, y);
+        rot += step;
+    }
+    shape.closePath();
+
+    const geo = new ExtrudeGeometry(shape, {
+        depth: depth,
+        bevelEnabled: true,
+        bevelThickness: depth * 0.25,
+        bevelSize: innerRadius * 0.15,
+        bevelSegments: 2,
+        bevelOffset: 0
+    });
+
+    // Center the star around the origin and orient toward +Z
+    geo.center();
+
+    return geo;
+}
+
+function buildTreeStar(tree) {
+    const group = new Group();
+
+    const starGeo = createStarGeometry(0.18, 0.35, 0.12);
+    const starMat = new MeshStandardMaterial({
+        color: 0xffc400,
+        emissive: new Color(0xffc400),
+        emissiveIntensity: 1.35,
+        roughness: 0.3,
+        metalness: 0.3
+    });
+    const star = new Mesh(starGeo, starMat);
+    group.add(star);
+
+    const halo = new Mesh(
+        new SphereGeometry(0.4, 16, 16),
+        new MeshBasicMaterial({
+            color: 0xffecc7,
+            transparent: true,
+            opacity: 0.25,
+            depthWrite: false
+        })
+    );
+    star.add(halo);
+    star.userData.halo = halo;
+
+    const box = new Box3().setFromObject(tree);
+    const top = new Vector3(
+        (box.min.x + box.max.x) * 0.5,
+        box.max.y,
+        (box.min.z + box.max.z) * 0.5
+    );
+    group.position.copy(top);
+    star.position.y = -0.001;
+
+    const roomCenter = new Vector3(0, group.position.y, 0);
+    const dir = roomCenter.clone().sub(group.position);
+    const yaw = Math.atan2(dir.x, dir.z);
+    group.rotation.y = yaw * 0.35;
+
+    star.rotation.z = 0.5;
+
+    group.userData.starMesh = star;
 
     return group;
 }
